@@ -1,0 +1,212 @@
+---
+title: "Final Project Analysis"
+author: "Yifan Sun"
+date: "December 10, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(stargazer)
+library(multiwayvcov)
+library(lmtest)
+
+final_df <- read.csv("C:/Users/ysun1/Documents/MIDS Fall 2017/W241/Final Project/final_df.csv")
+Donation_data <- read.csv("C:/Users/ysun1/Documents/MIDS Fall 2017/W241/Final Project/Donation_data.csv")
+
+```
+
+```{r, include = FALSE}
+Donation_data$donation.email <- tolower(Donation_data$Email)
+
+donation.email <- with(final_df, tapply(Supporter.Email, Supporter.ID, FUN=unique))
+donation.email <- as.data.frame(donation.email)
+donation.email$Supporter.ID <- rownames(donation.email)
+
+donation.click <- with(final_df, tapply(click, Supporter.ID, FUN=sum))
+donation.click <- as.data.frame(donation.click)
+donation.click$Supporter.ID <- rownames(donation.click)
+
+donation.open <- with(final_df, tapply(open, Supporter.ID, FUN=sum))
+donation.open <- as.data.frame(donation.open)
+donation.open$Supporter.ID <- rownames(donation.open)
+
+donation.group <- with(final_df, tapply(treatment, Supporter.ID, FUN = unique))
+donation.group <- as.data.frame(donation.group)
+donation.group$Supporter.ID <- rownames(donation.group)
+
+donation.temp <- aggregate(list(final_df$donor.status), by = list(final_df$Supporter.ID), FUN = unique)
+donation.temp$donor.status <- donation.temp$structure.c.1L..1L..1L..1L..1L..1L..1L..1L..1L..1L..1L..1L..1L..
+donation.temp$Supporter.ID <- donation.temp$Group.1
+donation.status <- data.frame(Supporter.ID = donation.temp$Supporter.ID, 
+                              donor.status = donation.temp$donor.status)
+
+donation.year <- with(final_df, tapply(PGSS.Year, Supporter.ID, FUN=unique))
+donation.year <- as.data.frame(donation.year)
+donation.year$Supporter.ID <- rownames(donation.year)
+
+
+donation <- join_all(list(donation.email,donation.status, donation.group, donation.year ,donation.click, donation.open), by = 'Supporter.ID', type = 'left')
+
+
+donation <- merge(donation, Donation_data[, c('donation.email', 'Donation.Amount')], by= "donation.email", all.x = TRUE)
+donation[is.na(donation)] <- 0
+
+donation$treatment <- factor(with(donation, ifelse((donation.group == "TRUE"), 1, 0)))
+donation$SYBUNT <- factor(with(donation, ifelse(donor.status == "SYBUNT", 1, 0)))
+donation$LYBUNT <- factor(with(donation, ifelse(donor.status == "LYBUNT", 1, 0)))
+donation$ND <- factor(with(donation, ifelse(donor.status == "NON-DONOR", 1, 0)))
+donation$click.flag <- factor(with(donation, ifelse((donation.click > 0 ), 1, 0)))
+donation$open.flag <- factor(with(donation, ifelse((donation.open >0 ), 1, 0)))
+donation$donation.flag <- factor(with(donation, ifelse((Donation.Amount >0 ), 1, 0)))
+##donation <- as.matrix(donation)
+
+##write.csv(donation, file = 'C:/Users/ysun1/Documents/MIDS Fall 2017/W241/Final Project/donation.csv')
+```
+
+
+### Analysis 
+
+#### Open rate 
+**Using non clustered standard errors ** 
+
+```{r}
+no.cluster.open.lm <- lm(donation.open ~ treatment, data = donation)
+summary(no.cluster.open.lm)
+```
+
+Treatment has statistically insignificant effect on open rate. Treatment has negative slope 
+
+**Using clustered standard errors (by class year) **
+```{r}
+cluster.open.lm <- lm(donation.open ~ treatment, data = donation)
+cluster.open.lm$cluster.vcov <- cluster.vcov(cluster.open.lm, ~donation.year)
+cluster.open.lm$cluster.se <- sqrt(diag(cluster.open.lm$cluster.vcov))
+
+#lower.CI <- cluster.open.lm$coefficients[["treatment"]] - 1.96 * cluster.open.lm$cluster.se[["treatment"]]
+#lower.CI
+#upper.CI <- cluster.open.lm$coefficients[["treatment"]] + 1.96 * cluster.open.lm$cluster.se[["treatment"]]
+#upper.CI
+
+coeftest(cluster.open.lm, cluster.open.lm$cluster.vcov)
+
+```
+
+Using clustered error, the treatment effect is -0.393; using clustered standard error, the p-value is 0.0042 
+
+**Using clustered error, along with donor status as a variable** 
+
+```{r}
+cluster.open.status.lm <- lm(donation.open ~ treatment + ND + LYBUNT + SYBUNT , data = donation)
+cluster.open.status.lm$cluster.vcov <- cluster.vcov(cluster.open.status.lm, ~donation.year)
+cluster.open.status.lm$cluster.se <- sqrt(diag(cluster.open.status.lm$cluster.vcov))
+
+coeftest(cluster.open.status.lm, cluster.open.status.lm$cluster.vcov)
+
+```
+
+Using clustered error, and taking into account donor statuses, the treatment effeict is -0.25, with p value of 0.24; however, donor status 2 and 3 (LYBUNTs and SYBUNTs are both statistically significant with positive effects)
+
+**LM on donor status and open rate**
+
+```{r}
+open.status.lm <- lm(donation.open ~ ND + LYBUNT + SYBUNT, data = donation)
+summary(open.status.lm)
+```
+
+
+#### Click rate
+**Using non clustered standard errors ** 
+```{r}
+no.cluster.click.lm <- lm(donation.click ~ treatment, data = donation)
+summary(no.cluster.click.lm)
+```
+
+Treatment has statistically insignificant effect on click rate. Treatment has negative slope 
+
+**Using clustered standard errors (by class year) **
+```{r}
+cluster.click.lm <- lm(donation.click ~ treatment, data = donation)
+cluster.click.lm$cluster.vcov <- cluster.vcov(cluster.click.lm, ~donation.year)
+cluster.click.lm$cluster.se <- sqrt(diag(cluster.click.lm$cluster.vcov))
+
+#lower.CI <- cluster.click.lm$coefficients[["treatment"]] - 1.96 * cluster.click.lm$cluster.se[["treatment"]]
+#lower.CI
+#upper.CI <- cluster.click.lm$coefficients[["treatment"]] + 1.96 * cluster.click.lm$cluster.se[["treatment"]]
+#upper.CI
+
+coeftest(cluster.click.lm, cluster.click.lm$cluster.vcov)
+
+```
+
+Using clustered error, the treatment effect is -0.214; using clustered standard error, the p-value is 0.18 
+
+**Using clustered error, along with donor status as a variable** 
+
+```{r}
+cluster.click.status.lm <- lm(donation.click ~ treatment + ND + LYBUNT + SYBUNT, data = donation)
+cluster.click.status.lm$cluster.vcov <- cluster.vcov(cluster.click.status.lm, ~donation.year)
+cluster.click.status.lm$cluster.se <- sqrt(diag(cluster.click.status.lm$cluster.vcov))
+
+coeftest(cluster.click.status.lm, cluster.click.status.lm$cluster.vcov)
+
+```
+
+Using clustered error, and taking into account donor statuses, the treatment effect is -0.167, with p value of 0.29; however, one of the donor status variables is siginificant
+
+**LM on donor status and click rate**
+
+```{r}
+click.status.lm <- lm(donation.click ~ ND + LYBUNT + SYBUNT, data = donation)
+summary(click.status.lm)
+```
+
+
+### Donation Amount
+
+**Using non clustered standard errors ** 
+```{r}
+no.cluster.donation.lm <- lm(Donation.Amount ~ treatment, data = donation)
+summary(no.cluster.donation.lm)
+```
+
+Treatment has statistically insignificant effect on click rate (although p-value at 0.0558) . Treatment has negative slope 
+
+**Using clustered standard errors (by class year) **
+```{r}
+cluster.donation.lm <- lm(Donation.Amount ~ treatment, data = donation)
+cluster.donation.lm$cluster.vcov <- cluster.vcov(cluster.donation.lm, ~donation.year)
+cluster.donation.lm$cluster.se <- sqrt(diag(cluster.donation.lm$cluster.vcov))
+
+#lower.CI <- cluster.donation.lm$coefficients[["treatment"]] - 1.96 * cluster.donation.lm$cluster.se[["treatment"]]
+#lower.CI
+#upper.CI <- cluster.donation.lm$coefficients[["treatment"]] + 1.96 * cluster.donation.lm$cluster.se[["treatment"]]
+#upper.CI
+
+coeftest(cluster.donation.lm, cluster.donation.lm$cluster.vcov)
+
+```
+
+Using clustered error, the treatment effect is -25.3937; using clustered standard error, the p-value is 0.009668 
+
+**Using clustered error, along with donor status as a variable** 
+
+```{r}
+cluster.donation.status.lm <- lm(Donation.Amount ~ treatment + ND + LYBUNT + SYBUNT, data = donation)
+cluster.donation.status.lm$cluster.vcov <- cluster.vcov(cluster.donation.status.lm, ~donation.year)
+cluster.donation.status.lm$cluster.se <- sqrt(diag(cluster.donation.status.lm$cluster.vcov))
+
+coeftest(cluster.donation.status.lm, cluster.donation.status.lm$cluster.vcov)
+
+```
+
+Using clustered error, and taking into account donor statuses, the treatment effect is -20.36, with p value of 0.1; however, one of the donor status variables is siginificant
+
+**LM on donor status and donation rate**
+
+```{r}
+donation.status.lm <- lm(Donation.Amount ~ ND + LYBUNT + SYBUNT, data = donation)
+summary(donation.status.lm)
+```
