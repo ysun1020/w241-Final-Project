@@ -1,0 +1,134 @@
+---
+title: "Final Project Analysis"
+author: "Yifan Sun"
+date: "December 10, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(stargazer)
+library(multiwayvcov)
+library(lmtest)
+library(sandwich)
+library(foreign)
+library(gmodels)
+library(reshape)
+
+
+
+```
+
+
+
+
+### Analysis 
+
+### Helper Functions:
+
+```{r}
+robust_model <- function(model){
+    model$vcovHC <- vcovHC(model)
+    model <- coeftest(model, model$vcovHC)
+    return(model)
+}
+
+
+cluster_model <- function(model, cluster_var){
+  
+    model$cluster1.vcov <- cluster.vcov(model,  cluster_var)
+    model <- coeftest(model, model$cluster1.vcov)
+    return (model)
+}
+
+
+
+
+coeftest_se_mod <- function(model , se.type = NA, cluster_var = NA){
+    if(tolower(se.type) == 'robust'){
+        model_x <- robust_model(model)
+    } else if(tolower(se.type) == 'clustered'){
+        model_x <- cluster_model(model, cluster_var)
+    }else {
+        model_x <- coeftest(model)
+    }
+    return(model_x)
+}
+```
+
+
+
+###  Saturated the model
+
+```{r}
+donation <- read.csv("/Users/ramseymagana/Desktop/MIDS/fall_2017/w241/project/donation.csv")
+
+donation$flag.1985 <- ifelse(donation$donation.year == 1985,1, 0)
+donation$flag.1996 <- ifelse(donation$donation.year == 1996,1, 0)
+donation$flag.1997 <- ifelse(donation$donation.year == 1997,1, 0)
+
+donation$flag.non.donor <- ifelse(donation$donor.status == 'NON-DONOR',1,0)
+donation$flag.sybunt <- ifelse(donation$donor.status == 'SYBUNT',1,0)
+donation$flag.lybunt <- ifelse(donation$donor.status == 'LYBUNT',1,0)
+
+donation$treatment <- with(donation, ifelse((donation.group == "TRUE"), 1, 0))
+
+#donation$male <- ifelse()
+
+```
+
+
+```{r}
+
+CrossTable(donation$donation.year, donation$donor.status,
+           prop.r = F, prop.c = F, prop.t = F, prop.chisq = F)
+```
+
+```{r}
+
+
+cast(donation[donation$treatment == 1,], donation.year ~ donor.status )
+cast(donation[donation$treatment == 0,], donation.year ~ donor.status )
+```
+
+#### Open rate 
+
+
+```{r}
+
+open.lm <-coeftest_se_mod(lm(donation.open ~ treatment + factor(donation.year) + factor(donor.status), data = donation),
+                                   se.type = 'robust', cluster_var = donation$donation.year)
+
+
+```
+
+
+
+#### Click rate
+
+```{r}
+
+click.lm <-coeftest_se_mod(lm(donation.click ~ treatment + factor(donation.year) + factor(donor.status), data = donation),
+            se.type = 'robust', cluster_var = donation$donation.year)
+
+
+```
+
+### Donation Amount
+
+```{r}
+don.amount.lm <-coeftest_se_mod(lm(Donation.Amount ~ treatment + factor(donation.year) + factor(donor.status), data = donation),
+            se.type = 'robust', cluster_var = donation$donation.year)
+
+
+```
+
+#### Regression table
+
+```{r}
+stargazer(open.lm, click.lm, don.amount.lm, type = 'text',column.labels = c('Open Rate', 'Click Rate', 'Donation Amount'), title = c('Blocked Study Design Regression Models'))
+
+
+```
